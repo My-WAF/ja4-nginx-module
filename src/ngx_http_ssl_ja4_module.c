@@ -1740,6 +1740,51 @@ ngx_http_ssl_ja4l(ngx_http_request_t *r,
 
 // HELPERS AND CONFIG
 
+static char *ngx_http_ssl_ja4_access_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static void *ngx_http_ssl_ja4_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_ssl_ja4_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+static ngx_int_t ngx_http_ssl_ja4_access_handler(ngx_http_request_t *r);
+
+static ngx_command_t ngx_http_ssl_ja4_commands[] = {
+    { ngx_string("ja4_allow"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("ja4_deny"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("ja4h_allow"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("ja4h_deny"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("ja4one_allow"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("ja4one_deny"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_ssl_ja4_access_rule,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    ngx_null_command
+};
+
 /**
  * ngx_http_ssl_ja4_init - Initialize Nginx variables for JA4.
  *
@@ -1752,12 +1797,13 @@ ngx_http_ssl_ja4l(ngx_http_request_t *r,
  * @return NGX_OK on successful initialization.
  */
 static ngx_int_t
-ngx_http_ssl_ja4_init(ngx_conf_t *cf)
+ngx_http_ssl_ja4_init_handler(ngx_conf_t *cf)
 {
-
-    ngx_http_variable_t *v;
-    size_t l = 0;
-    size_t vars_len;
+    ngx_http_handler_pt        *h;
+    ngx_http_core_main_conf_t  *cmcf;
+    ngx_http_variable_t        *v;
+    size_t                      l = 0;
+    size_t                      vars_len;
 
     vars_len = (sizeof(ngx_http_ssl_ja4_variables_list) /
                 sizeof(ngx_http_ssl_ja4_variables_list[0]));
@@ -1775,20 +1821,29 @@ ngx_http_ssl_ja4_init(ngx_conf_t *cf)
         *v = ngx_http_ssl_ja4_variables_list[l];
     }
 
+    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_ssl_ja4_access_handler;
+
     return NGX_OK;
 }
 
 /* http_json_log config preparation */
 // adds a function that executes after configuraiton finishes..? not sure
 static ngx_http_module_t ngx_http_ssl_ja4_module_ctx = {
-    NULL,                  /* preconfiguration */
-    ngx_http_ssl_ja4_init, /* postconfiguration */
-    NULL,                  /* create main configuration */
-    NULL,                  /* init main configuration */
-    NULL,                  /* create server configuration */
-    NULL,                  /* merge server configuration */
-    NULL,                  /* create location configuration */
-    NULL                   /* merge location configuration */
+    NULL,                          /* preconfiguration */
+    ngx_http_ssl_ja4_init_handler, /* postconfiguration */
+    NULL,                          /* create main configuration */
+    NULL,                          /* init main configuration */
+    NULL,                          /* create server configuration */
+    NULL,                          /* merge server configuration */
+    ngx_http_ssl_ja4_create_loc_conf, /* create location configuration */
+    ngx_http_ssl_ja4_merge_loc_conf   /* merge location configuration */
 };
 
 /* http_json_log delivery */
@@ -1796,7 +1851,7 @@ static ngx_http_module_t ngx_http_ssl_ja4_module_ctx = {
 ngx_module_t ngx_http_ssl_ja4_module = {
     NGX_MODULE_V1,
     &ngx_http_ssl_ja4_module_ctx, /* module context */
-    NULL,                         /* module directives */
+    ngx_http_ssl_ja4_commands,    /* module directives */
     NGX_HTTP_MODULE,              /* module type */
     NULL,                         /* init master */
     NULL,                         /* init module */
@@ -1830,4 +1885,156 @@ ngx_get_or_create_ja4_ctx (ngx_http_request_t *r)
     }
 
     return ctx;
+}
+
+static void *
+ngx_http_ssl_ja4_create_loc_conf(ngx_conf_t *cf)
+{
+    ngx_http_ssl_ja4_loc_conf_t  *conf;
+
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_ssl_ja4_loc_conf_t));
+    if (conf == NULL) {
+        return NULL;
+    }
+
+    return conf;
+}
+
+static char *
+ngx_http_ssl_ja4_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+{
+    ngx_http_ssl_ja4_loc_conf_t *prev = parent;
+    ngx_http_ssl_ja4_loc_conf_t *conf = child;
+
+    if (conf->rules == NULL) {
+        conf->rules = prev->rules;
+    }
+
+    return NGX_CONF_OK;
+}
+
+static char *
+ngx_http_ssl_ja4_access_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_ssl_ja4_loc_conf_t *slcf = conf;
+    ngx_str_t                   *value;
+    ngx_http_ssl_ja4_rule_t     *rule;
+
+    if (slcf->rules == NULL) {
+        slcf->rules = ngx_array_create(cf->pool, 4, sizeof(ngx_http_ssl_ja4_rule_t));
+        if (slcf->rules == NULL) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    rule = ngx_array_push(slcf->rules);
+    if (rule == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    value = cf->args->elts;
+
+    // determine deny/allow from directive name
+    if (ngx_strstr(value[0].data, "deny")) {
+        rule->deny = 1;
+    } else {
+        rule->deny = 0;
+    }
+
+    // determine type
+    if (ngx_strncmp(value[0].data, "ja4h_", 5) == 0) {
+        rule->fingerprint_type = NGX_HTTP_SSL_JA4_FP_TYPE_JA4H;
+    } else if (ngx_strncmp(value[0].data, "ja4one_", 7) == 0) {
+        rule->fingerprint_type = NGX_HTTP_SSL_JA4_FP_TYPE_JA4ONE;
+    } else {
+        rule->fingerprint_type = NGX_HTTP_SSL_JA4_FP_TYPE_JA4;
+    }
+
+    if (ngx_strcmp(value[1].data, "all") == 0) {
+        rule->all = 1;
+        rule->fp.len = 0;
+        rule->fp.data = NULL;
+    } else {
+        rule->all = 0;
+        rule->fp = value[1];
+    }
+
+    return NGX_CONF_OK;
+}
+
+static ngx_int_t
+ngx_http_ssl_ja4_access_handler(ngx_http_request_t *r)
+{
+    ngx_http_ssl_ja4_loc_conf_t *slcf;
+    ngx_http_ssl_ja4_ctx_t      *ctx;
+    ngx_http_ssl_ja4_rule_t     *rules, *rule;
+    ngx_uint_t                   i;
+    ngx_ssl_ja4_t                ja4;
+    ngx_ssl_ja4h_t               ja4h;
+    ngx_str_t                    fp;
+
+
+    slcf = ngx_http_get_module_loc_conf(r, ngx_http_ssl_ja4_module);
+
+    if (slcf->rules == NULL) {
+        return NGX_DECLINED;
+    }
+
+    ctx = ngx_get_or_create_ja4_ctx(r);
+    if (ctx == NULL) {
+        return NGX_ERROR;
+    }
+
+    rules = slcf->rules->elts;
+    for (i = 0; i < slcf->rules->nelts; i++) {
+        rule = &rules[i];
+        
+        // Handle "all" case
+        if (rule->all) {
+             if (rule->deny) return NGX_HTTP_FORBIDDEN;
+             return NGX_OK;
+        }
+
+        if (rule->fingerprint_type == NGX_HTTP_SSL_JA4_FP_TYPE_JA4) {
+             if (ctx->ja4.len == 0) {
+                 if (r->connection && ngx_ssl_ja4(r->connection, r->pool, &ja4) == NGX_OK) {
+                     ngx_ssl_ja4_fp(r->pool, &ja4, &fp);
+                     ctx->ja4 = fp; // ngx_ssl_ja4_fp allocates from pool
+                 }
+             }
+             if (ctx->ja4.len > 0 && rule->fp.len == ctx->ja4.len && ngx_strncmp(ctx->ja4.data, rule->fp.data, ctx->ja4.len) == 0) {
+                  if (rule->deny) return NGX_HTTP_FORBIDDEN;
+                  return NGX_OK;
+             }
+        } 
+        else if (rule->fingerprint_type == NGX_HTTP_SSL_JA4_FP_TYPE_JA4ONE) {
+             if (ctx->ja4one.len == 0) {
+                 if (r->connection && ngx_ssl_ja4(r->connection, r->pool, &ja4) == NGX_OK) {
+                     ngx_ssl_ja4one_fp(r->pool, &ja4, &fp);
+                     ctx->ja4one = fp;
+                 }
+             }
+             if (ctx->ja4one.len > 0 && rule->fp.len == ctx->ja4one.len && ngx_strncmp(ctx->ja4one.data, rule->fp.data, ctx->ja4one.len) == 0) {
+                  if (rule->deny) return NGX_HTTP_FORBIDDEN;
+                  return NGX_OK;
+             }
+        }
+        else if (rule->fingerprint_type == NGX_HTTP_SSL_JA4_FP_TYPE_JA4H) {
+             if (ctx->ja4h.len == 0) {
+                 if (ngx_ssl_ja4h(r, r->pool, &ja4h) == NGX_OK) {
+                     ngx_ssl_ja4h_fp(r->pool, &ja4h, &fp);
+                     ctx->ja4h = fp;
+                 }
+             }
+             if (ctx->ja4h.len > 0 && rule->fp.len == ctx->ja4h.len && ngx_strncmp(ctx->ja4h.data, rule->fp.data, ctx->ja4h.len) == 0) {
+                  if (rule->deny) return NGX_HTTP_FORBIDDEN;
+                  return NGX_OK;
+             }
+         }
+    }
+    
+    // Check JA4H with local calculation if I can't store it in ctx?
+    // Or I should update the header file again.
+    
+    return NGX_DECLINED;
 }

@@ -6,6 +6,7 @@ typedef struct {
     ngx_str_t   ja4;
     ngx_str_t   ja4_string;
     ngx_str_t   ja4one;
+    ngx_str_t   ja4h;
 } ngx_http_ssl_ja4_ctx_t;
 
 // STRUCTS
@@ -146,6 +147,21 @@ typedef struct ngx_ssl_ja4l_s
 #define DTLS1_VERSION_INT   0xFEFF
 #define DTLS1_2_VERSION_INT 0xFEFD
 #define QUICV1_VERSION_INT  0x0001
+
+#define NGX_HTTP_SSL_JA4_FP_TYPE_JA4 0
+#define NGX_HTTP_SSL_JA4_FP_TYPE_JA4H 1
+#define NGX_HTTP_SSL_JA4_FP_TYPE_JA4ONE 2
+
+typedef struct {
+    ngx_uint_t deny;      /* unsigned  deny:1; */
+    ngx_uint_t all;       /* unsigned  all:1; */
+    ngx_uint_t fingerprint_type;
+    ngx_str_t  fp;
+} ngx_http_ssl_ja4_rule_t;
+
+typedef struct {
+    ngx_array_t *rules;     /* array of ngx_http_ssl_ja4_rule_t */
+} ngx_http_ssl_ja4_loc_conf_t;
 
 // JA4H character lenght definitions without null terminator
 #define JA4H_A_FINGERPRINT_LENGTH 2 + 2 + 1 + 1 + 2 + 4
@@ -391,7 +407,7 @@ ngx_module_t ngx_http_ssl_ja4_module;
 
 // FUNCTION PROTOTYPES
 // INIT
-static ngx_int_t ngx_http_ssl_ja4_init(ngx_conf_t *cf);
+
 
 static ngx_http_ssl_ja4_ctx_t *ngx_get_or_create_ja4_ctx(ngx_http_request_t *r);
 

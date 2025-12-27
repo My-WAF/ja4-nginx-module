@@ -40,6 +40,7 @@ COPY src/ngx_http_ssl_ja4_module.c.dummy /tmp/ja4-nginx-module/src/ngx_http_ssl_
 
 WORKDIR /tmp/nginx-${NGINX_VERSION}
 RUN ./configure \
+      --with-cc-opt=-Wno-error=unterminated-string-initialization \
       --with-openssl=/tmp/openssl-${OPENSSL_VERSION} \
       --with-debug --with-compat \
       --add-module=/tmp/ja4-nginx-module/src \
@@ -72,7 +73,8 @@ WORKDIR /tmp/nginx-${NGINX_VERSION}
 RUN patch -p1 < /tmp/ja4-nginx-module/patches/nginx.patch
 
 # Rebuild only what's changed in the nginx patch or module
-RUN make -j$(nproc) && \
+RUN rm -f objs/addon/src/ngx_http_ssl_ja4_module.o && \
+    make -j$(nproc) && \
     make install
 
 # Link logs
